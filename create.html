@@ -17,7 +17,7 @@
     <aside class="sidebar" id="sidebar"></aside>
     <main class="main-content">
       <header class="topbar" id="topbar"></header>
-      <section class="content-wrap">
+      <section class="content-wrap" hidden>
         <article class="card form-card">
           <div class="card-header"><h3>إنشاء طلب جديد</h3></div>
           <form id="createRequestForm" class="form-grid" novalidate>
@@ -28,13 +28,6 @@
             <div class="grid-2">
               <div><label for="requestType">نوع الطلب</label><input id="requestType" type="text" required /></div>
               <div><label for="department">القسم</label><input id="department" type="text" required /></div>
-            </div>
-            <div id="snsTargetWrap" style="display:none;">
-              <label for="snsTarget">جهة الرفع</label>
-              <select id="snsTarget">
-                <option value="FNS">رفع إلى FNS ثم CEO</option>
-                <option value="CEO">رفع مباشر إلى CEO</option>
-              </select>
             </div>
             <div><label for="receiptNo">رقم الوصل (اختياري)</label><input id="receiptNo" type="text" /></div>
             <div class="grid-2">
@@ -58,12 +51,13 @@
               <div><label for="whatsappNumber">رقم واتساب للإشعار (اختياري)</label><input id="whatsappNumber" type="tel" placeholder="مثال: 9647XXXXXXXXX" /></div>
               <div style="display:flex;align-items:flex-end;padding-bottom:8px;"><label for="sendWhatsapp" style="display:flex;align-items:center;gap:8px;margin:0;"><input id="sendWhatsapp" type="checkbox" /> إرسال إشعار واتساب بعد إنشاء الطلب</label></div>
             </div>
-            <div><label for="attachments">مرفقات</label><input id="attachments" type="file" multiple /></div>
+            <div><label for="attachments">مرفقات</label><input id="attachments" accept="application/pdf,image/png,image/jpeg" type="file" multiple /></div>
             <div class="grid-2">
               <div><label for="requesterSignature">توقيع مقدم الطلب</label><input id="requesterSignature" type="text" /></div>
               <div><label for="managerSignature">توقيع المدير المفوض</label><input id="managerSignature" type="text" /></div>
             </div>
             <p id="createError" class="error-text"></p>
+          <div id="whatsappAction"></div>
             <button id="createBtn" type="submit" class="btn btn-primary">إرسال الطلب</button>
           </form>
         </article>
@@ -73,6 +67,8 @@
   <div id="toastContainer" class="toast-container"></div>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
   <script src="js/firebase-config.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/app.js"></script>

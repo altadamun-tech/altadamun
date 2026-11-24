@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocsFromServer, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebaseServices';
 import { DataGrid } from '@mui/x-data-grid';
-import type { GridColDef } from '@mui/x-data-grid/models/colDef/gridColDef';
+import type { GridColDef } from '@mui/x-data-grid';
 import { Box, Typography, Button } from '@mui/material';
 import LeaveReviewActions from './LeaveReviewActions';
 import LeaveForm from './LeaveForm';
@@ -29,6 +29,7 @@ export default function LeaveList() {
   const { t } = useTranslation();
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [openForm, setOpenForm] = useState(false);
   const [editLeave, setEditLeave] = useState<Leave | null>(null);
   const handleAdd = async (values: LeaveFormValues) => {
@@ -54,28 +55,26 @@ export default function LeaveList() {
 
   const fetchLeaves = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'leaves'));
+    setError("");
+    try {
+      const querySnapshot = await getDocsFromServer(collection(db, 'leaves'));
     const data = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Leave[];
     setLeaves(data);
-    setLoading(false);
+    } catch {
+      setError("تعذر تحميل البيانات من Firebase.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchLeaves();
   }, []);
 
-  // رصيد تجريبي (في التطبيق الفعلي يجب ربطه ببيانات الموظف)
-  const [leaveBalance, setLeaveBalance] = useState<{ [employee: string]: number }>({});
-
   const handleApprove = async (row: Leave) => {
     // تحديث حالة الطلب
     const ref = doc(db, 'leaves', row.id);
     await updateDoc(ref, { status: 'approved' });
-    // تحديث رصيد الإجازات (تجريبي)
-    setLeaveBalance((prev) => ({
-      ...prev,
-      [row.employeeName]: (prev[row.employeeName] || 10) - 1,
-    }));
     fetchLeaves();
   };
 
@@ -134,22 +133,16 @@ export default function LeaveList() {
           + {t('leave.request') || 'Request Leave'}
         </Button>
       </Box>
+      {error && <Typography color="error" role="alert">{error}</Typography>}
       <DataGrid
         rows={leaves}
         columns={columns}
         autoHeight
         loading={loading}
-        pageSize={10}
-        rowsPerPageOptions={[10, 20, 50]}
-        disableSelectionOnClick
+        initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+        pageSizeOptions={[10, 20, 50]}
+        disableRowSelectionOnClick
       />
-      {/* عرض رصيد الإجازات التجريبي */}
-      <Box mt={2}>
-        <Typography variant="subtitle1">{t('leave.balance') || 'Leave Balance'}:</Typography>
-        {Object.entries(leaveBalance).map(([name, balance]) => (
-          <Typography key={name}>{name}: {balance}</Typography>
-        ))}
-      </Box>
       <LeaveForm
         open={openForm}
         onClose={() => { setOpenForm(false); setEditLeave(null); }}

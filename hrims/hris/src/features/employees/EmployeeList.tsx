@@ -1,9 +1,9 @@
 
 import { useEffect, useState } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocsFromServer, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebaseServices';
 import { DataGrid } from '@mui/x-data-grid';
-import type { GridColDef } from '@mui/x-data-grid/models/colDef/gridColDef';
+import type { GridColDef } from '@mui/x-data-grid';
 import { Box, Typography, Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import EmployeeForm from './EmployeeForm';
@@ -27,15 +27,22 @@ export default function EmployeeList() {
   const { t } = useTranslation();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [openForm, setOpenForm] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
 
   const fetchEmployees = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'employees'));
+    setError("");
+    try {
+      const querySnapshot = await getDocsFromServer(collection(db, 'employees'));
     const data = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Employee[];
     setEmployees(data);
-    setLoading(false);
+    } catch {
+      setError("تعذر تحميل البيانات من Firebase.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -98,14 +105,15 @@ export default function EmployeeList() {
           + {t('app.add') || 'Add'}
         </Button>
       </Box>
+      {error && <Typography color="error" role="alert">{error}</Typography>}
       <DataGrid
         rows={employees}
         columns={columns}
         autoHeight
         loading={loading}
-        pageSize={10}
-        rowsPerPageOptions={[10, 20, 50]}
-        disableSelectionOnClick
+        initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+        pageSizeOptions={[10, 20, 50]}
+        disableRowSelectionOnClick
       />
       <EmployeeForm
         open={openForm}

@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
 import { TextField, Button, Box, Typography, Paper } from "@mui/material";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/src/firebase";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDocFromServer } from "firebase/firestore";
+import { auth, db } from "@/src/firebase";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -15,11 +16,20 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // Redirect or show success
-      window.location.href = "/";
-    } catch (err: any) {
-      setError(err.message || "Login failed");
+      const { user } = await signInWithEmailAndPassword(auth, globalThis.ALTADAMUN_LOGIN_EMAIL(email), password);
+      const profile = await getDocFromServer(doc(db, "users", user.uid));
+      if (profile.get("active") !== true || profile.get("role") !== "IT") {
+        setError("الحساب غير مخوّل للوصول إلى الموارد البشرية.");
+        await signOut(auth);
+        return;
+      }
+      if (!process.env.NEXT_PUBLIC_HRIS_PATH) {
+        setError("أُثبتت صلاحية الحساب. اضبط مسار تطبيق الموارد البشرية في إعدادات البناء.");
+        return;
+      }
+      window.location.assign(process.env.NEXT_PUBLIC_HRIS_PATH);
+    } catch {
+      setError("تعذر تسجيل الدخول أو التحقق من الصلاحيات.");
     } finally {
       setLoading(false);
     }

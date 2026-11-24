@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocsFromServer } from 'firebase/firestore';
 import { db } from '../../firebaseServices';
-import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { Box, Typography, Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
@@ -17,13 +17,20 @@ export default function PayrollList() {
   const { t } = useTranslation();
   const [payrolls, setPayrolls] = useState<Payroll[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const fetchPayrolls = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'payrolls'));
+    setError("");
+    try {
+      const querySnapshot = await getDocsFromServer(collection(db, 'payrolls'));
     const data = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Payroll[];
     setPayrolls(data);
-    setLoading(false);
+    } catch {
+      setError("تعذر تحميل البيانات من Firebase.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -43,14 +50,15 @@ export default function PayrollList() {
         <Typography variant="h5">{t('app.payroll')}</Typography>
         <Button variant="contained" color="primary">+ {t('payroll.add') || 'Add Payroll'}</Button>
       </Box>
+      {error && <Typography color="error" role="alert">{error}</Typography>}
       <DataGrid
         rows={payrolls}
         columns={columns}
         autoHeight
         loading={loading}
-        pageSize={10}
-        rowsPerPageOptions={[10, 20, 50]}
-        disableSelectionOnClick
+        initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+        pageSizeOptions={[10, 20, 50]}
+        disableRowSelectionOnClick
       />
     </Box>
   );

@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function profile(uid) {
+      return /databases/$(db)/documents/users/$(uid);
+    }
+    function role(roles) {
+      return request.auth != null && get(profile(request.auth.uid)).data.active == true
+        && get(profile(request.auth.uid)).data.role in roles;
+    }
+    function staff() { return role(['IT', 'FNS', 'SNS', 'CEO']); }
+    function text(value, length) { return value is string && value.size() <= length; }
+    function required(value, length) { return text(value, length) && value.size() > 0; }
+    function auditPath(id) { return /databases/$(db)/documents/auditLogs/$(id); }
+    function requestPath(id) { return /databases/$(db)/documents/requests/$(id); }
+    function linked(d, event) {
+      let log = getAfter(auditPath(d.auditId)).data;
+      return !exists(auditPath(d.auditId)) && log.actor == request.auth.uid
+        && log.requestId == string(d.id) && log.action == event && log.timestamp == request.time;
+    }
+    function validCreate(d, id) {
+      return d.keys().hasOnly(['id', 'requestType', 'receiptNo', 'employeeName', 'requesterName',
+        'department', 'amount', 'currency', 'priority', 'requestDetails', 'notes', 'attachments',
+        'requesterSignature', 'managerSignature', 'title', 'description', 'createdBy',
+        'createdUid', 'createdRole', 'financeVisible', 'approvalRoute', 'currentApprovalIndex',
+        'approvalHistory', 'status', 'date', 'updatedAt', 'whatsappNumber', 'auditId'])
+        && d.id is int && d.id > 0 && d.id <= 4503599627370496 && id == string(d.id)
+        && d.createdUid == request.auth.uid && d.createdBy == request.auth.token.email
+        && role([d.createdRole]) && d.status == 'Pending' && d.currentApprovalIndex == 0
+        && d.approvalHistory == [] && d.amount is number && d.amount > 0 && d.amount <= 1000000000000000
+        && d.currency in ['IQD', 'USD'] && required(d.priority, 40)
+        && required(d.requestType, 200) && required(d.employeeName, 200) && required(d.requesterName, 200)
+        && required(d.department, 200) && required(d.requestDetails, 4000)
+        && d.title == d.requestType && d.description == d.requestDetails
+        && text(d.receiptNo, 100) && text(d.notes, 4000) && d.attachments is list && d.attachments.size() <= 10
+        && text(d.requesterSignature, 200) && text(d.managerSignature, 200)
+        && (d.whatsappNumber == null || d.whatsappNumber.matches('^[0-9]{6,20}$'))
+        && d.date == request.time && d.updatedAt == request.time
+        && d.financeVisible == false && d.approvalRoute == ['CEO', 'FNS'];
+    }
+
+    match /users/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow read: if role(['IT']);
+      allow write: if false;
+    }
+    match /requests/{id} {
+      allow read: if role(['IT', 'CEO']) || role(['FNS']) && resource.data.financeVisible == true;
+      allow create: if role(['IT', 'SNS']) && validCreate(request.resource.data, id)
+        && linked(request.resource.data, 'created');
+      allow update: if staff() && resource.data.get('deleted', false) == false
+        && (deleteRecord() || decision());
+      function deleteRecord() {
+        let d = request.resource.data;
+        return role(['IT']) && d.deleted == true && d.updatedAt == request.time
+          && d.diff(resource.data).affectedKeys().hasOnly(['deleted', 'updatedAt', 'auditId'])
+          && linked(d, 'deleted');
+      }
+      function decision() {
+        let before = resource.data;
+        let after = request.resource.data;
+        let step = after.approvalHistory[before.approvalHistory.size()];
+        let finance = before.get('financeVisible', false) == true;
+        let stage = finance ? 'FNS' : 'CEO';
+        return before.status == 'Pending' && role(['IT', stage])
+          && after.diff(before).affectedKeys().hasOnly(['status', 'currentApprovalIndex', 'decisionNote',
+            'approvalHistory', 'updatedAt', 'auditId', 'financeVisible', 'approvalRoute'])
+          && after.approvalRoute == ['CEO', 'FNS'] && after.financeVisible is bool
+          && text(after.decisionNote, 4000) && after.updatedAt == request.time
+          && step.keys().hasOnly(['role', 'user', 'action', 'note', 'at'])
+          && step.role == stage && step.user == request.auth.token.email
+          && text(step.note, 4000) && text(step.at, 30)
+          && after.approvalHistory == before.approvalHistory.concat([step])
+          && (finance ? financeDecision(after, step) : preliminaryDecision(after, step));
+      }
+      function preliminaryDecision(d, step) {
+        return step.action == 'Approve' && d.status == 'Pending' && d.financeVisible == true
+            && d.currentApprovalIndex == 1 && linked(d, 'preapproved')
+          || step.action == 'Reject' && d.status == 'Rejected' && d.financeVisible == false
+            && d.currentApprovalIndex == 0 && linked(d, 'rejected');
+      }
+      function financeDecision(d, step) {
+        return d.financeVisible == true && d.currentApprovalIndex == 1
+          && (step.action == 'Paid' && d.status == 'Paid' && linked(d, 'paid')
+            || step.action == 'NotPaid' && d.status == 'NotPaid' && linked(d, 'not_paid'));
+      }
+    }
+
+    match /auditLogs/{id} {
+      allow read: if role(['IT']);
+      allow create: if staff() && validLog(request.resource.data);
+      function validLog(d) {
+        return d.keys().hasOnly(['actor', 'user', 'action', 'requestId', 'timestamp'])
+          && d.actor == request.auth.uid && d.user == request.auth.token.email && d.timestamp == request.time
+          && (d.requestId == null && d.action in ['login', 'logout', 'pdf_export']
+            || d.requestId is string && d.action in ['created', 'deleted', 'preapproved', 'rejected', 'paid', 'not_paid']
+              && getAfter(requestPath(d.requestId)).data.auditId == id
+              && (!exists(requestPath(d.requestId)) || get(requestPath(d.requestId)).data.auditId != id));
+      }
+    }
+    match /employees/{id} {
+      allow read, delete: if role(['IT']);
+      allow create, update: if role(['IT']) && employee(request.resource.data);
+      function employee(d) {
+        return d.keys().hasOnly(['name', 'email', 'position', 'department'])
+          && required(d.name, 200) && required(d.email, 254)
+          && required(d.position, 200) && required(d.department, 200);
+      }
+    }
+    match /leaves/{id} {
+      allow read, delete: if role(['IT']);
+      allow create, update: if role(['IT']) && validLeave(request.resource.data);
+      function validLeave(d) {
+        return d.keys().hasOnly(['employeeName', 'type', 'startDate', 'endDate', 'status'])
+          && required(d.employeeName, 200) && required(d.type, 100)
+          && d.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && d.endDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && d.startDate <= d.endDate && d.status in ['pending', 'approved', 'rejected'];
+      }
+    }
+    match /payrolls/{id} { allow read: if role(['IT']); }
+  }
+}

@@ -1,4 +1,5 @@
-﻿(function () {
+﻿window.altadamunReady.then((ready) => {
+  if (!ready) return;
   const fromDate = document.getElementById("fromDate");
   const toDate = document.getElementById("toDate");
   const statusSel = document.getElementById("statusSel");
@@ -7,10 +8,12 @@
   const AR = {
     totalRequests: "\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0637\u0644\u0628\u0627\u062a",
     pending: "\u0642\u064a\u062f \u0627\u0644\u0627\u0646\u062a\u0638\u0627\u0631",
+    paid: "تم الصرف",
+    notPaid: "لم يُصرف",
     approved: "\u0645\u0648\u0627\u0641\u0642 \u0639\u0644\u064a\u0647",
     rejected: "\u0645\u0631\u0641\u0648\u0636",
-    totalApprovedUsd: "\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0645\u0639\u062a\u0645\u062f USD",
-    totalApprovedIqd: "\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0645\u0639\u062a\u0645\u062f IQD",
+    totalPaidUsd: "إجمالي المصروف USD",
+    totalPaidIqd: "إجمالي المصروف IQD",
     noData: "\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a",
     unspecified: "\u063a\u064a\u0631 \u0645\u062d\u062f\u062f",
     total: "\u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a",
@@ -44,17 +47,18 @@
     const host = document.getElementById("reportKpis");
     if (!host) return;
 
-    const approved = rows.filter((r) => r.status === "Approved");
-    const usd = approved.filter((r) => r.currency === "USD").reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const iqd = approved.filter((r) => r.currency === "IQD").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const paid = rows.filter((r) => r.status === "Paid");
+    const usd = paid.filter((r) => r.currency === "USD").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const iqd = paid.filter((r) => r.currency === "IQD").reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
     host.innerHTML = `
       <article class="report-kpi"><div class="label">${AR.totalRequests}</div><div class="value">${rows.length}</div></article>
       <article class="report-kpi"><div class="label">${AR.pending}</div><div class="value">${rows.filter((r) => r.status === "Pending").length}</div></article>
-      <article class="report-kpi"><div class="label">${AR.approved}</div><div class="value">${approved.length}</div></article>
+      <article class="report-kpi"><div class="label">${AR.paid}</div><div class="value">${paid.length}</div></article>
+      <article class="report-kpi"><div class="label">${AR.notPaid}</div><div class="value">${rows.filter(r => r.status === "NotPaid").length}</div></article>
       <article class="report-kpi"><div class="label">${AR.rejected}</div><div class="value">${rows.filter((r) => r.status === "Rejected").length}</div></article>
-      <article class="report-kpi"><div class="label">${AR.totalApprovedUsd}</div><div class="value">${formatAmount(usd, "USD")}</div></article>
-      <article class="report-kpi"><div class="label">${AR.totalApprovedIqd}</div><div class="value">${formatAmount(iqd, "IQD")}</div></article>
+      <article class="report-kpi"><div class="label">${AR.totalPaidUsd}</div><div class="value">${formatAmount(usd, "USD")}</div></article>
+      <article class="report-kpi"><div class="label">${AR.totalPaidIqd}</div><div class="value">${formatAmount(iqd, "IQD")}</div></article>
     `;
   }
 
@@ -245,18 +249,18 @@
     const body = document.getElementById("deptBody");
     if (!body) return;
 
-    const map = {};
+    const map = Object.create(null);
     rows.forEach((r) => {
       const k = r.department || AR.unspecified;
       if (!map[k]) map[k] = { total: 0, approved: 0, rejected: 0 };
       map[k].total += 1;
-      if (r.status === "Approved") map[k].approved += 1;
+      if (r.status === "Paid") map[k].approved += 1;
       if (r.status === "Rejected") map[k].rejected += 1;
     });
 
     const entries = Object.entries(map).sort((a, b) => b[1].total - a[1].total);
     body.innerHTML = entries.length
-      ? entries.map(([k, v]) => `<tr><td>${k}</td><td>${v.total}</td><td>${v.approved}</td><td>${v.rejected}</td></tr>`).join("")
+      ? entries.map(([k, v]) => `<tr><td>${IRS.escapeHtml(k)}</td><td>${v.total}</td><td>${v.approved}</td><td>${v.rejected}</td></tr>`).join("")
       : `<tr><td colspan="4">${AR.noData}</td></tr>`;
   }
 
@@ -264,7 +268,7 @@
     const body = document.getElementById("typeBody");
     if (!body) return;
 
-    const map = {};
+    const map = Object.create(null);
     rows.forEach((r) => {
       const k = r.requestType || AR.unspecified;
       map[k] = (map[k] || 0) + 1;
@@ -273,12 +277,12 @@
     const total = rows.length || 1;
     const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
     body.innerHTML = entries.length
-      ? entries.map(([k, n]) => `<tr><td>${k}</td><td>${n}</td><td>${((n / total) * 100).toFixed(1)}%</td></tr>`).join("")
+      ? entries.map(([k, n]) => `<tr><td>${IRS.escapeHtml(k)}</td><td>${n}</td><td>${((n / total) * 100).toFixed(1)}%</td></tr>`).join("")
       : `<tr><td colspan="3">${AR.noData}</td></tr>`;
   }
 
   function renderTrend(rows) {
-    const map = {};
+    const map = Object.create(null);
     rows.forEach((r) => {
       const d = new Date(r.date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -291,13 +295,14 @@
   }
 
   function renderStatusChart(rows) {
-    const labels = [AR.pending, AR.approved, AR.rejected];
+    const labels = [AR.pending, AR.paid, AR.notPaid, AR.rejected];
     const values = [
       rows.filter((r) => r.status === "Pending").length,
-      rows.filter((r) => r.status === "Approved").length,
+      rows.filter((r) => r.status === "Paid").length,
+      rows.filter((r) => r.status === "NotPaid").length,
       rows.filter((r) => r.status === "Rejected").length
     ];
-    drawStatusDonut("reportBar", labels, values, ["#d09a11", "#4e9644", "#db3d52"]);
+    drawStatusDonut("reportBar", labels, values, ["#d09a11", "#4e9644", "#6f786a", "#db3d52"]);
   }
 
   function renderAll() {
@@ -311,5 +316,6 @@
 
   [fromDate, toDate, statusSel, deptSearch].forEach((el) => el?.addEventListener("input", renderAll));
   [statusSel].forEach((el) => el?.addEventListener("change", renderAll));
+  window.addEventListener("altadamun:data", renderAll);
   renderAll();
-})();
+});

@@ -1,68 +1,67 @@
 ﻿(function () {
-  const STORAGE_KEYS = { users: "irs_users", currentUser: "irs_current_user", requests: "irs_requests", logs: "irs_logs" };
-  const defaultUsers = [
-    { username: "it_", password: "IT2026Secure", role: "IT", permissions: ["all"] },
-    { username: "ceo", password: "CEO2026Approve", role: "CEO", permissions: ["view_all", "approve"] },
-    { username: "fns", password: "FNS2026Finance", role: "FNS", permissions: ["create", "view_all", "export_pdf"] },
-    { username: "sns", password: "SNS2026Access", role: "SNS", permissions: ["create", "view_all", "export_pdf"] }
-  ];
   const roleAr = { IT: "تقنية المعلومات", FNS: "المالية", SNS: "SNS", CEO: "الإدارة العليا" };
-  const statusAr = { Pending: "قيد الانتظار", Approved: "موافق عليه", Rejected: "مرفوض" };
+  const statusAr = { Paid: "تم الصرف", NotPaid: "لم يُصرف", Pending: "قيد الانتظار", Approved: "موافق عليه", Rejected: "مرفوض" };
 
-  function safeRead(k, f) { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : f; } catch { return f; } }
-  function safeWrite(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+  let currentUser = null;
+  let requests = [];
+  let logs = [];
+  const notify = () => window.dispatchEvent(new Event("altadamun:data"));
+  const getCurrentUser = () => currentUser;
+  const getRequests = () => requests;
+  const getLogs = () => logs;
+  const note = event => IRSCloud.note(event).catch(console.error);
 
-  function initData() {
-    if (!localStorage.getItem(STORAGE_KEYS.users)) safeWrite(STORAGE_KEYS.users, defaultUsers);
-    else {
-      const users = getUsers();
-      const usersByRole = {};
-      users.forEach((u) => { if (u?.role) usersByRole[u.role] = u; });
+  function showDataError(error) {
+    console.error(error);
+    const content = document.querySelector(".content-wrap");
+    if (!content) return;
+    if (document.getElementById("firebaseDataError")) return;
+    const message = document.createElement("p");
+    message.id = "firebaseDataError";
+    message.className = "error-text";
+    message.setAttribute("role", "alert");
+    message.textContent = "تعذر تحميل البيانات من Firebase. تحقق من الاتصال وحاول إعادة فتح الصفحة.";
+    content.hidden = true;
+    content.before(message);
+  }
 
-      const merged = defaultUsers.map((du) => {
-        const existingByUsername = users.find((u) => u.username === du.username);
-        const existingByRole = usersByRole[du.role];
-        const source = existingByUsername || existingByRole;
-        if (!source) return du;
-        return {
-          ...source,
-          username: du.username,
-          password: du.password,
-          role: du.role,
-          permissions: du.permissions
-        };
-      });
-
-      safeWrite(STORAGE_KEYS.users, merged);
+  async function loadData() {
+    const user = currentUser;
+    try {
+      [requests, logs] = await Promise.all([
+        user.role === "SNS" ? [] : IRSCloud.readRequests(user.role),
+        user.role === "IT" ? IRSCloud.readLogs() : []
+      ]);
+      if (currentUser !== user) return false;
+      if (user.role !== "SNS") IRSCloud.watchRequests(user.role, rows => {
+        if (currentUser !== user) return;
+        requests = rows;
+        document.getElementById("firebaseDataError")?.remove();
+        const content = document.querySelector(".content-wrap");
+        if (content) content.hidden = false;
+        notify();
+      }, showDataError);
+      const content = document.querySelector(".content-wrap");
+      if (content && !document.getElementById("firebaseDataError")) content.hidden = false;
+      return true;
+    } catch (error) {
+      showDataError(error);
+      return false;
     }
-    if (!localStorage.getItem(STORAGE_KEYS.requests)) safeWrite(STORAGE_KEYS.requests, []);
-    if (!localStorage.getItem(STORAGE_KEYS.logs)) safeWrite(STORAGE_KEYS.logs, []);
   }
 
-  const getUsers = () => safeRead(STORAGE_KEYS.users, defaultUsers);
-  const getCurrentUser = () => safeRead(STORAGE_KEYS.currentUser, null);
-  const setCurrentUser = (u) => safeWrite(STORAGE_KEYS.currentUser, u);
-  const clearCurrentUser = () => localStorage.removeItem(STORAGE_KEYS.currentUser);
-  const getRequests = () => safeRead(STORAGE_KEYS.requests, []);
-  const setRequests = (i) => {
-    safeWrite(STORAGE_KEYS.requests, i);
-    window.IRSCloud?.pushState({ requests: i });
-  };
-  const getLogs = () => safeRead(STORAGE_KEYS.logs, []);
-  const setLogs = (i) => {
-    safeWrite(STORAGE_KEYS.logs, i);
-    window.IRSCloud?.pushState({ logs: i });
-  };
-
-  function addLog(user, action) {
-    const logs = getLogs();
-    logs.unshift({ user, action, timestamp: new Date().toISOString() });
-    setLogs(logs.slice(0, 1000));
-  }
-
-  function nextRequestId() {
-    const r = getRequests();
-    return r.length ? Math.max(...r.map((x) => Number(x.id) || 0)) + 1 : 1;
+  async function mutateRequest(record, event, prior) {
+    try {
+      await IRSCloud.mutate(record, event, prior);
+    } catch (error) {
+      console.error(error);
+      showToast("تعذر حفظ الطلب. تحقق من الاتصال والصلاحيات وحاول مرة أخرى.", "error");
+      return false;
+    }
+    if (currentUser?.role === "IT") {
+      IRSCloud.readLogs().then(rows => { logs = rows; notify(); }).catch(console.error);
+    }
+    return true;
   }
 
   function formatDate(iso) { return new Date(iso).toLocaleString("ar-IQ"); }
@@ -94,8 +93,10 @@
   }
 
   function getNavItems(role) {
+    if (role === "SNS") return [{ href: "create.html", label: "رفع طلب" }];
     const common = [{ href: "dashboard.html", label: "لوحة التحكم" }, { href: "requests.html", label: "الطلبات" }, { href: "reports.html", label: "التقارير" }];
-    if (role === "FNS" || role === "SNS" || role === "IT") common.push({ href: "create.html", label: "إنشاء طلب" });
+    if (role === "IT") common.push({ href: "hris/", label: "الموارد البشرية" });
+    if (role === "IT") common.push({ href: "create.html", label: "إنشاء طلب" });
     if (role === "CEO" || role === "FNS" || role === "IT") common.push({ href: "approvals.html", label: "الموافقات" });
     if (role === "IT") common.push({ href: "logs.html", label: "السجلات" });
     return common;
@@ -108,36 +109,27 @@
     if (!user || !sidebar || !topbar) return;
     const currentPage = location.pathname.split("/").pop();
   sidebar.innerHTML = `<div class="sidebar-brand"><img src="css/altadamun.svg" alt="" class="sidebar-logo" /><div>شركة التضامن للتامين التجاري</div></div>${getNavItems(user.role).map((n) => `<a class="nav-link ${currentPage === n.href ? "active" : ""}" href="${n.href}">${n.label}</a>`).join("")}`;
-    topbar.innerHTML = `<div><strong>بوابة ${roleAr[user.role] || user.role}</strong><div style="color: var(--muted); font-size: .85rem;">مرحبًا، ${user.username}</div></div><button id="logoutBtn" class="btn btn-ghost">تسجيل الخروج</button>`;
+    topbar.innerHTML = `<div><strong>بوابة ${roleAr[user.role] || user.role}</strong><div style="color: var(--muted); font-size: .85rem;">مرحبًا، ${escapeHtml(user.username.replace(/@altadamun-accounts\.firebaseapp\.com$/, ""))}</div></div><button id="logoutBtn" class="btn btn-ghost">تسجيل الخروج</button>`;
     document.getElementById("logoutBtn")?.addEventListener("click", () => {
-      addLog(user.username, "تسجيل خروج");
-      clearCurrentUser();
-      location.href = "index.html";
+      note("logout");
+      IRSCloud.signOut()
+        .then(() => location.replace("index.html"))
+        .catch(() => showToast("تعذر تسجيل الخروج", "error"));
     });
   }
 
   window.IRS = {
-    STORAGE_KEYS,
-    initData,
-    getUsers,
-    getCurrentUser,
-    setCurrentUser,
-    clearCurrentUser,
-    getRequests,
-    setRequests,
-    getLogs,
-    setLogs,
-    addLog,
-    nextRequestId,
-    formatDate,
-    highlightText,
-    showToast,
-    renderShell,
-    statusAr: (s) => statusAr[s] || s
+    getCurrentUser, getRequests, getLogs, note, mutateRequest, loadData, showDataError,
+    setUser: user => {
+      currentUser = user;
+      if (!user) {
+        requests = [];
+        logs = [];
+        const content = document.querySelector(".content-wrap");
+        if (content) content.hidden = true;
+      }
+    },
+    formatDate, escapeHtml, highlightText, showToast, renderShell,
+    statusAr: status => statusAr[status] || status
   };
-
-  initData();
-  window.IRSCloud?.hydrateToLocalStorage();
-  window.IRSCloud?.subscribeRealtime();
 })();
-

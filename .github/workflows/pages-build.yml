@@ -1,0 +1,27 @@
+name: Build GitHub Pages artifact
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: hrims/hris/package-lock.json
+      - run: npm --prefix hrims/hris ci
+      - run: npm --prefix hrims/hris run build
+      - run: node scripts/build-pages.cjs
+      - run: node --test tests/local-verification.cjs
+      - run: node scripts/scan-isolation.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: altadamun-pages
+          path: dist/pages
+          include-hidden-files: true

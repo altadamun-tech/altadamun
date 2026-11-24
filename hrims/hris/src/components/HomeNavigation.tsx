@@ -1,6 +1,6 @@
 import { Box, Button, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useState } from 'react';
+
 
 export default function HomeNavigation({ onNavigate }: { onNavigate: (page: string) => void }) {
   const { t } = useTranslation();

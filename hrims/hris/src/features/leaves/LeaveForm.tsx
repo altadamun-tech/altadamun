@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material';
+import { useEffect, useState } from 'react';
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
 export interface LeaveFormValues {
@@ -24,7 +24,7 @@ export default function LeaveForm({ open, onClose, onSubmit, initialValues }: Le
   );
 
   // إعادة تعيين القيم عند فتح النموذج
-  React.useEffect(() => {
+  useEffect(() => {
     if (open) {
       setValues(initialValues || { employeeName: '', type: '', startDate: '', endDate: '', status: 'pending' });
     }

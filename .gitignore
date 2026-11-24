@@ -12,3 +12,15 @@ serviceAccount*.json
 *.key
 .DS_Store
 Thumbs.db
+
+.local-backup/
+.env.local
+dist/
+build/
+.next/
+.firebase-emulator/
+*.p12
+*.pfx
+
+out/
+*.tsbuildinfo

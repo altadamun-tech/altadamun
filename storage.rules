@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function role(roles) {
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.active == true
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in roles;
+    }
+    match /requestFiles/{uid}/{requestId}/{file} {
+      function savedRequest() {
+        return firestore.get(/databases/(default)/documents/requests/$(requestId)).data;
+      }
+      function pendingUpload() {
+        return role(['IT', 'SNS']) && request.auth.uid == uid
+          && !firestore.exists(/databases/(default)/documents/requests/$(requestId));
+      }
+      allow get: if (role(['IT', 'CEO']) || role(['FNS']) && savedRequest().get('financeVisible', false)) && savedRequest().createdUid == uid
+        && savedRequest().get('deleted', false) == false
+        && file in savedRequest().attachments;
+      allow create: if pendingUpload() && requestId.matches('^[0-9]{1,16}$')
+        && file.size() <= 200 && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('^(application/pdf|image/png|image/jpeg)$');
+      allow delete: if pendingUpload();
+    }
+  }
+}

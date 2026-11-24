@@ -1,86 +1,96 @@
 (function () {
-  const roleAccess = {
-    "dashboard.html": ["IT", "FNS", "SNS", "CEO"],
-    "requests.html": ["IT", "FNS", "SNS", "CEO"],
-    "reports.html": ["IT", "FNS", "SNS", "CEO"],
-    "create.html": ["IT", "FNS", "SNS"],
+  const access = {
+    "dashboard.html": ["IT", "FNS", "CEO"],
+    "requests.html": ["IT", "FNS", "CEO"],
+    "reports.html": ["IT", "FNS", "CEO"],
+    "create.html": ["IT", "SNS"],
     "approvals.html": ["IT", "FNS", "CEO"],
     "logs.html": ["IT"]
   };
+  const home = role => role === "SNS" ? "create.html" : role === "FNS" ? "approvals.html" : "dashboard.html";
+  const form = document.getElementById("loginForm");
+  const error = document.getElementById("loginError");
+  const button = document.getElementById("loginBtn");
+  if (button) button.disabled = true;
 
-  function redirectForRole() { return "dashboard.html"; }
-
-  function guardPage() {
-    const file = location.pathname.split("/").pop() || "index.html";
-    const user = IRS.getCurrentUser();
-    const validSession = user && roleAccess["dashboard.html"].includes(user.role);
-    if (user && !validSession) IRS.clearCurrentUser();
-    if (file === "index.html") {
-      if (validSession) location.replace(redirectForRole());
-      return;
+  function showLoginFailure(failure) {
+    if (failure.code === "permission-denied") {
+      error.textContent = "قواعد Firestore تمنع قراءة صلاحيات الحساب. تواصل مع مسؤول النظام.";
+    } else if (["auth/invalid-credential", "auth/user-not-found", "auth/wrong-password", "auth/invalid-email"].includes(failure.code)) {
+      error.textContent = "البريد الإلكتروني أو كلمة المرور غير صحيحة.";
+    } else {
+      error.textContent = "تعذر الاتصال بخدمة المصادقة أو التحقق من الحساب.";
     }
-    if (!validSession) {
-      location.replace("index.html");
-      return;
-    }
-    const allowed = roleAccess[file];
-    if (allowed && !allowed.includes(user.role)) {
-      IRS.showToast("غير مصرح لك بالدخول", "error");
-      location.href = "dashboard.html";
-      return;
-    }
-    IRS.renderShell();
   }
 
-  function setupLogin() {
-    const form = document.getElementById("loginForm");
-    if (!form) return;
-
-    function normalizeDigits(value) {
-      return String(value || "")
-        .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+  async function enter(user) {
+    const profile = await IRSCloud.profile(user);
+    if (user && !profile) {
+      await IRSCloud.signOut();
+      if (error) error.textContent = "الحساب غير مفعّل أو لم تُعيّن له صلاحية.";
     }
+    return profile;
+  }
 
-    function normalizeInput(value) {
-      return normalizeDigits(value)
-        .replace(/[\u200B-\u200D\uFEFF]/g, "")
-        .trim();
-    }
-
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const username = normalizeInput(document.getElementById("username").value).toLowerCase();
-      const password = normalizeInput(document.getElementById("password").value);
-      const error = document.getElementById("loginError");
-      const btn = document.getElementById("loginBtn");
-      error.textContent = "";
-
-      if (!username || !password) {
-        error.textContent = "يرجى إدخال اسم المستخدم وكلمة المرور.";
-        return;
-      }
-
-      btn.disabled = true;
-      btn.textContent = "جاري الدخول...";
-
-      setTimeout(() => {
-        const user = IRS.getUsers().find((u) => u.username === username && u.password === password);
-        if (!user) {
-          error.textContent = "بيانات الدخول غير صحيحة.";
-          IRS.showToast("فشل تسجيل الدخول", "error");
-          btn.disabled = false;
-          btn.textContent = "دخول";
-          return;
+  window.altadamunReady = (async () => {
+    try {
+      if (!window.IRSCloud) throw new Error("Firebase unavailable");
+      const user = await enter(await IRSCloud.firstUser());
+      if (form) {
+        if (user) {
+          location.replace(home(user.role));
+          return false;
         }
-        IRS.setCurrentUser({ username: user.username, role: user.role, permissions: user.permissions });
-        IRS.addLog(user.username, "تسجيل دخول");
-        IRS.showToast("تم تسجيل الدخول بنجاح");
-        location.href = redirectForRole(user.role);
-      }, 300);
-    });
-  }
-
-  guardPage();
-  setupLogin();
+        button.disabled = false;
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          const email = globalThis.ALTADAMUN_LOGIN_EMAIL(document.getElementById("username").value);
+          const password = document.getElementById("password").value;
+          error.textContent = "";
+          button.disabled = true;
+          try {
+            const credential = await IRSCloud.signIn(email, password);
+            const user = await enter(credential.user);
+            if (user) {
+              IRS.note("login");
+              location.replace(home(user.role));
+            }
+          } catch (failure) {
+            showLoginFailure(failure);
+          } finally {
+            button.disabled = false;
+          }
+        });
+        return false;
+      }
+      if (!user) {
+        location.replace("index.html");
+        return false;
+      }
+      const page = location.pathname.split("/").pop();
+      if (!access[page]?.includes(user.role)) {
+        location.replace(home(user.role));
+        return false;
+      }
+      IRS.setUser(user);
+      IRS.renderShell();
+      IRSCloud.watchSession(active => {
+        if (active?.uid !== user.uid) {
+          IRS.setUser(null);
+          location.replace("index.html");
+        }
+      });
+      IRSCloud.watchProfile(user.uid, role => {
+        if (role !== user.role) {
+          IRS.setUser(null);
+          location.replace("index.html");
+        }
+      }, IRS.showDataError);
+      return IRS.loadData();
+    } catch (failure) {
+      if (error) showLoginFailure(failure);
+      else IRS.showDataError(failure);
+      return false;
+    }
+  })();
 })();

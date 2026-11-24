@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { AppBar, Toolbar, Typography, Box, Container, Button, Select, MenuItem } from '@mui/material';
+import type { ReactNode } from 'react';
+import { AppBar, Toolbar, Typography, Box, Container, Select, MenuItem } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
 interface MainLayoutProps {
