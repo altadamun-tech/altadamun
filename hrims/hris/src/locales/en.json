@@ -1,0 +1,44 @@
+  ,
+  "payroll": {
+    "month": "Month",
+    "amount": "Amount",
+    "status": "Status",
+    "add": "Add Payroll"
+  }
+{
+  "app": {
+    "title": "HR Management System",
+    "dashboard": "Dashboard",
+    "employees": "Employees",
+    "leaves": "Leaves",
+    "payroll": "Payroll",
+    "login": "Login",
+    "logout": "Logout",
+    "language": "Language",
+    "arabic": "Arabic",
+    "english": "English",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "name": "Name",
+    "email": "Email",
+    "position": "Position",
+    "department": "Department",
+    "cancel": "Cancel",
+    "save": "Save"
+    },
+    "leave": {
+      "type": "Type",
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "status": "Status",
+      "request": "Request Leave",
+      "annual": "Annual",
+      "sick": "Sick",
+      "unpaid": "Unpaid",
+      "approve": "Approve",
+      "reject": "Reject",
+      "review": "Review",
+      "balance": "Leave Balance"
+  }
+}
